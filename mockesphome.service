@@ -1,0 +1,11 @@
+[Unit]
+Description=ESPHome Emulation
+Wants=network-online.target bluetooth.target
+After=network-online.target bluetooth.target
+
+[Service]
+Type=notify
+ExecStart=/usr/local/bin/mockesphome -config /etc/mockesphome.yaml
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,3 @@
+# Sample configuration file: enable the API server, with all settings at default
+# values.
+api:

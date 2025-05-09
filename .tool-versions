@@ -1,0 +1,2 @@
+protoc 25
+protoc-gen-go 1.36
