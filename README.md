@@ -20,7 +20,7 @@ I have a spare SBC (Raspberry Pi 3) but no extra ESP32 development board.
 ## License
 
 ```
-home-assistant-bluetooth-proxy
+mockesphome
 Copyright (C) 2025 Mook
 
 This program is free software: you can redistribute it and/or modify
