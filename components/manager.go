@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"iter"
 	"log/slog"
 
 	"github.com/goccy/go-yaml"
@@ -22,6 +23,17 @@ var (
 		enabled:    make(map[string]Component),
 	}
 )
+
+// Iterate through the registered components
+func Enumerate() iter.Seq[Component] {
+	return func(yield func(Component) bool) {
+		for _, component := range registry.registered {
+			if !yield(component) {
+				return
+			}
+		}
+	}
+}
 
 // Register a component into the component registry.  This should be called from
 // the `init()` function of each component's package.

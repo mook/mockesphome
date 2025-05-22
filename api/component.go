@@ -1,4 +1,6 @@
-// Package api implements the ESPHome native API server.
+// The `api` component implements the ESPHome native API server; this is required
+// to communicate with Home Assistant using the ESPHome protocol.
+// At this point only the unencrypted protocol is implemented.
 package api
 
 import (
@@ -24,7 +26,7 @@ const (
 // Configuration for the component.
 type Configuration struct {
 	Port     int    // The port to listen on; defaults to 6053.
-	Password string // Optional password
+	Password string // Optional password.
 }
 
 // ESPHome native API component

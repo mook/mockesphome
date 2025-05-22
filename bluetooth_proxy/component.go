@@ -1,4 +1,7 @@
-// Package bluetooth_proxy implements the bluetooth proxy.
+// The `bluetooth_proxy` component implements the ESPHome bluetooth proxy
+// protocol for use with Home Assistant.  Enabling this component will also
+// automatically enable the `api` component.
+// At this time, only passive scans are implemented.
 package bluetooth_proxy
 
 import (

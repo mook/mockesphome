@@ -1,0 +1,21 @@
+# mockesphome
+
+This emulates an ESPHome device, communicating with Home Assistant for proxying
+Bluetooth passive scans.
+
+## Installation
+
+The tested scenario is running on a Linux machine with BlueZ; in theory using
+TinyGo is also possible.
+
+Please see `mockesphome.service` for an example of a systemd unit that launches
+`mockesphome` with its dependencies.
+
+To manually run the application, pass in the configuration file path with the
+`-config` flag.
+
+## Configuration
+
+The configuration format is similar to ESPHome configuration; the input YAML
+file can be configured to enable specific components as needed.  The currently
+supported components include:

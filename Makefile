@@ -47,6 +47,11 @@ test: venv/bin/aioesphomeapi-discover
 	. venv/bin/activate && \
 	python -m unittest discover integration_tests
 
+# Documentation
+docs-output/index.md: ${SOURCES}
+	mkdir -p $(dir $@)
+	go run ./doc -outPath $@
+
 # Utility targets
 clean:
 	-rm -rf api/pb/

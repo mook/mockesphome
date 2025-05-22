@@ -8,6 +8,7 @@ require (
 	github.com/goccy/go-yaml v1.17.1
 	golang.org/x/sync v0.14.0
 	golang.org/x/sys v0.33.0
+	golang.org/x/tools v0.22.0
 	google.golang.org/protobuf v1.36.6
 	gotest.tools/v3 v3.5.2
 	tinygo.org/x/bluetooth v0.11.0
@@ -29,5 +30,4 @@ require (
 	golang.org/x/exp v0.0.0-20230728194245-b0cb94b80691 // indirect
 	golang.org/x/mod v0.18.0 // indirect
 	golang.org/x/net v0.26.0 // indirect
-	golang.org/x/tools v0.22.0 // indirect
 )

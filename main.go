@@ -10,9 +10,8 @@ import (
 	"syscall"
 
 	"github.com/coreos/go-systemd/v22/daemon"
-	_ "github.com/mook/mockesphome/api"
-	_ "github.com/mook/mockesphome/bluetooth_proxy"
 	"github.com/mook/mockesphome/components"
+	_ "github.com/mook/mockesphome/load"
 )
 
 var (
