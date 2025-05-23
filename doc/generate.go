@@ -2,6 +2,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	_ "embed"
 	"errors"
@@ -10,11 +11,12 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"io"
 	"log/slog"
+	"maps"
 	"os"
 	"reflect"
 	"strings"
+	"text/template"
 
 	"slices"
 
@@ -25,19 +27,46 @@ import (
 )
 
 var (
-	//go:embed doc.md
-	docPrefix string
-	outPath   = flag.String("outPath", "-", "file to output to")
+	//go:embed doc.md.gotmpl
+	docTemplate string
+	outPath     = flag.String("outPath", "-", "file to output to")
 )
+
+type configItem struct {
+	Type        string
+	Description string
+}
+type component struct {
+	Name        string                // The name of the component
+	Description string                // The component documentation
+	Config      map[string]configItem // Configuration items for this component
+}
 
 func run(ctx context.Context) error {
 	flag.Parse()
+
+	tmpl, err := template.New("").Parse(docTemplate)
+	if err != nil {
+		return err
+	}
 
 	pkgs, err := loadPackages()
 	if err != nil {
 		return fmt.Errorf("failed to load packages: %w", err)
 	}
 	slog.DebugContext(ctx, "loaded packages", "packages", pkgs)
+
+	var components []*component
+	for _, pkg := range pkgs {
+		c, err := parseComponent(ctx, pkg)
+		if err != nil {
+			return fmt.Errorf("failed to parse %s: %w", pkg.PkgPath, err)
+		}
+		components = append(components, c)
+	}
+	slices.SortFunc(components, func(a, b *component) int {
+		return cmp.Compare(a.Name, b.Name)
+	})
 
 	var writer *os.File
 	if *outPath == "-" {
@@ -50,14 +79,8 @@ func run(ctx context.Context) error {
 		defer writer.Close()
 	}
 
-	if _, err := writer.WriteString(docPrefix); err != nil {
+	if err := tmpl.Execute(writer, components); err != nil {
 		return err
-	}
-
-	for _, pkg := range pkgs {
-		if err := genPackage(ctx, pkg, writer); err != nil {
-			return fmt.Errorf("failed to generate %s: %w", pkg.PkgPath, err)
-		}
 	}
 	return nil
 }
@@ -75,47 +98,43 @@ func loadPackages() ([]*packages.Package, error) {
 	return packages.Load(config, pkgPaths...)
 }
 
-func genPackage(ctx context.Context, pkg *packages.Package, writer io.Writer) error {
+// Parse a component package, returning its name and configuration items.
+func parseComponent(ctx context.Context, pkg *packages.Package) (*component, error) {
 	if len(pkg.Errors) > 0 {
 		var errs []error
 		for _, err := range pkg.Errors {
 			errs = append(errs, err)
 		}
-		return fmt.Errorf("package load failure: %w", errors.Join(errs...))
+		return nil, fmt.Errorf("package load failure: %w", errors.Join(errs...))
 	}
 	if pkg.Types == nil {
-		return fmt.Errorf("failed to load package types")
+		return nil, fmt.Errorf("failed to load package types")
 	}
 
-	var doc string
+	result := component{
+		Name: pkg.PkgPath[strings.LastIndex(pkg.PkgPath, "/")+1:],
+	}
+
 	for _, file := range pkg.Syntax {
 		if file.Doc != nil {
-			doc += file.Doc.Text()
-		}
-	}
-	if strings.TrimSpace(doc) != "" {
-		componentName := pkg.PkgPath[strings.LastIndex(pkg.PkgPath, "/")+1:]
-		if _, err := fmt.Fprintf(writer, "\n### %s\n\n", componentName); err != nil {
-			return err
-		}
-		if _, err := fmt.Fprintf(writer, "%s\n", doc); err != nil {
-			return err
+			result.Description += file.Doc.Text() + "\n"
 		}
 	}
 
 	configType := pkg.Types.Scope().Lookup("Configuration")
-	if configType == nil {
-		slog.DebugContext(ctx, "package has no Configuration", "package", pkg.PkgPath)
-		return nil
+	if configType != nil {
+		config, err := genConfigDocs(configType, pkg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse config for %s: %w", result.Name, err)
+		}
+		result.Config = config
 	}
-	slog.DebugContext(ctx, "got config type", "configuration", configType)
-	return genConfigDocs(configType, pkg, writer)
+	return &result, nil
 }
 
 // Given the type object for the declaration of the config object, emit its
 // documentation.
-func genConfigDocs(object types.Object, pkg *packages.Package, writer io.Writer) error {
-	componentName := pkg.PkgPath[strings.LastIndex(pkg.PkgPath, "/")+1:]
+func genConfigDocs(object types.Object, pkg *packages.Package) (map[string]configItem, error) {
 	pos := object.Pos()
 	for _, file := range pkg.Syntax {
 		if !(file.FileStart <= pos && pos < file.FileEnd) {
@@ -124,26 +143,19 @@ func genConfigDocs(object types.Object, pkg *packages.Package, writer io.Writer)
 		path, _ := astutil.PathEnclosingInterval(file, pos, pos)
 		ident := getNodeOfType[*ast.Ident](path)
 		if ident == nil {
-			return fmt.Errorf("failed to get ident for %s", object.Id())
+			return nil, fmt.Errorf("failed to get ident for %s", object.Id())
 		}
 		typeSpec := getNodeOfType[*ast.TypeSpec](path)
 		if typeSpec == nil {
-			return fmt.Errorf("failed to find TypeSpec for %s", ident.Name)
+			return nil, fmt.Errorf("failed to find TypeSpec for %s", ident.Name)
 		}
 		structType, ok := typeSpec.Type.(*ast.StructType)
 		if !ok {
-			return fmt.Errorf("failed to convert TypeSpect to StructType")
+			return nil, fmt.Errorf("failed to convert TypeSpect to StructType")
 		}
-		if len(structType.Fields.List) == 0 {
-			_, err := fmt.Fprintf(writer, "There is no configuration for `%s`.\n", componentName)
-			return err
-		}
-		if _, err := fmt.Fprintf(writer, "Parameter | Description\n--- | ---\n"); err != nil {
-			return err
-		}
-		return printConfigProperties(structType, nil, writer)
+		return parseConfigProperties(structType, nil)
 	}
-	return fmt.Errorf("failed to find file for %+v", object)
+	return nil, fmt.Errorf("failed to find file for %+v", object)
 }
 
 func getNodeOfType[T ast.Node](path []ast.Node) T {
@@ -166,10 +178,11 @@ func unParen(expr ast.Expr) ast.Expr {
 	}
 }
 
-// Given a StructType of configuration, print out the table rows describing the
-// configuration properties.  The prefix is pre-pended to the field names, for
-// use with nested structures.
-func printConfigProperties(structType *ast.StructType, prefix []string, writer io.Writer) error {
+// Given a StructType of configuration, return the configuration items for
+// templating.  The prefix is pre-pended to the field names, for use with nested
+// structures.
+func parseConfigProperties(structType *ast.StructType, prefix []string) (map[string]configItem, error) {
+	result := make(map[string]configItem)
 	for _, field := range structType.Fields.List {
 		fieldName := ""
 		if ident, ok := unParen(field.Type).(*ast.Ident); ok {
@@ -200,17 +213,19 @@ func printConfigProperties(structType *ast.StructType, prefix []string, writer i
 		if field.Doc != nil {
 			comment = strings.TrimSpace(field.Doc.Text())
 		}
-		_, err := fmt.Fprintf(writer, "%s | %s\n", strings.Join(fullName, "."), comment)
-		if err != nil {
-			return err
+		result[strings.Join(fullName, ".")] = configItem{
+			Type:        fmt.Sprintf("%s", unParen(field.Type)),
+			Description: comment,
 		}
 		if nestedStruct, ok := unParen(field.Type).(*ast.StructType); ok {
-			if err := printConfigProperties(nestedStruct, fullName, writer); err != nil {
-				return err
+			childItems, err := parseConfigProperties(nestedStruct, fullName)
+			if err != nil {
+				return nil, err
 			}
+			maps.Copy(result, childItems)
 		}
 	}
-	return nil
+	return result, nil
 }
 
 func main() {

@@ -19,3 +19,21 @@ To manually run the application, pass in the configuration file path with the
 The configuration format is similar to ESPHome configuration; the input YAML
 file can be configured to enable specific components as needed.  The currently
 supported components include:
+
+{{ range . -}}
+
+### {{ .Name }}
+
+{{ .Description }}
+
+{{- if .Config | len }}
+Parameter | Type | Description
+--- | --- | ---
+{{ range $key, $param := .Config -}}
+{{ $key }} | {{ $param.Type }} | {{ $param.Description }}
+{{ end }}
+{{- else }}
+There is no configuration for `{{ .Name }}`.
+{{ end }}
+
+{{- end }}
