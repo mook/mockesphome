@@ -1,4 +1,4 @@
-GO_MODULE=$(shell go list .)
+GO_MODULE=$(shell awk '$$1 == "module" { print $$2 }' go.mod)
 SOURCES += main.go $(wildcard $(addsuffix /*.go,* */*))
 SOURCE_URL := ""
 
@@ -15,6 +15,7 @@ api/pb/api_options.pb.go: esphome/esphome/components/api/api_options.proto
 	--go_opt=Mapi_options.proto=${GO_MODULE}/api/pb \
 	--go_opt=default_api_level=API_OPAQUE \
 	$<
+PROTOBUF += api/pb/api_options.pb.go
 SOURCES += api/pb/api_options.pb.go
 
 api/pb/api.pb.go: esphome/esphome/components/api/api.proto api/pb/api_options.pb.go
@@ -27,7 +28,13 @@ api/pb/api.pb.go: esphome/esphome/components/api/api.proto api/pb/api_options.pb
 	--go_opt=Mapi_options.proto=${GO_MODULE}/api/pb \
 	--go_opt=default_api_level=API_OPAQUE \
 	$<
+PROTOBUF += api/pb/api.pb.go
 SOURCES += api/pb/api.pb.go
+
+GENERATED := doc/notice.txt doc/notice.txt.gz doc/index.md
+${GENERATED}: $(filter-out ${GENERATED},$(wildcard doc/*)) ${PROTOBUF}
+	go run ./doc/
+SOURCES += ${GENERATED}
 
 # Main executable
 $(notdir ${GO_MODULE}): ${SOURCES}
@@ -47,12 +54,8 @@ test: venv/bin/aioesphomeapi-discover
 	. venv/bin/activate && \
 	python -m unittest discover integration_tests
 
-# Documentation
-docs-output/index.md: ${SOURCES}
-	mkdir -p $(dir $@)
-	go run ./doc -outPath $@
-
 # Utility targets
 clean:
 	-rm -rf api/pb/
 	-rm -f $(notdir ${GO_MODULE})
+	-rm -f doc/notice.txt doc/index.md

@@ -1,9 +1,13 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
+	_ "embed"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -16,7 +20,10 @@ import (
 
 var (
 	flagConfig  = flag.String("config", "config.yaml", "configuration file")
+	flagLicense = flag.Bool("license", false, "display license text and exit")
 	flagVerbose = flag.Bool("verbose", false, "emit extra logging")
+	//go:embed doc/notice.txt.gz
+	licenseText []byte
 )
 
 func run(ctx context.Context) error {
@@ -28,6 +35,15 @@ func run(ctx context.Context) error {
 	if *flagVerbose {
 		handler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})
 		slog.SetDefault(slog.New(handler))
+	}
+
+	if *flagLicense {
+		reader, err := gzip.NewReader(bytes.NewBuffer(licenseText))
+		if err != nil {
+			return fmt.Errorf("error reading license text: %w", err)
+		}
+		_, err = io.Copy(os.Stdout, reader)
+		return err
 	}
 
 	configFile, err := os.Open(*flagConfig)

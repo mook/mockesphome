@@ -1,0 +1,27 @@
+{{- define "depInfo" -}}
+{{- range $dep := . }}
+{{ line "-" }}
+Module       : {{ $dep.Name }}
+Version      : {{ $dep.Version }}
+License      : {{ $dep.LicenseId }}
+License File : {{ $dep.LicenseFile }}
+
+{{ $dep | licenceText }}
+{{ end }}
+{{- end -}}
+
+License information for the {{ (index $ 0 0).Name }} project:
+{{ template "depInfo" (index . 0) }}
+{{ line "=" }}
+
+{{- if index $ 1 | len | lt 0 }}
+Third party libraries used by the {{ (index $ 0 0).Name }} project:
+{{ template "depInfo" (index . 1 )}}
+{{ line "=" }}
+{{- end }}
+
+{{- if index $ 2 | len | lt 0 }}
+Indirect dependencies used by the {{ (index $ 0 0).Name }} project:
+{{ template "depInfo" (index . 2 )}}
+{{ line "=" }}
+{{- end }}

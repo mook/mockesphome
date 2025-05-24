@@ -22,7 +22,10 @@ jobs:
         echo "$PWD/bin" >> "$GITHUB_PATH"
       working-directory: ${{ runner.temp }}/protoc
     - run: go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36
-    - run: make docs-output/index.md
+    - run: make doc/index.md
+    - run: |
+        mkdir -p docs-output
+        cp doc/index.md doc/notice.txt docs-output/
     - uses: actions/jekyll-build-pages@v1
       with:
         source: docs-output

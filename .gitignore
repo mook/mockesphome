@@ -1,4 +1,7 @@
 /api/pb/
+/doc/index.md
+/doc/notice.txt
+/doc/notice.txt.gz
 /mockesphome
 /venv/
 __pycache__
