@@ -32,7 +32,7 @@ Parameter | Type | Description
 {{ range $key, $param := .Config -}}
 {{ $key }} | {{ $param.Type }} | {{ $param.Description }}
 {{ end }}
-{{- else }}
+{{ else }}
 There is no configuration for `{{ .Name }}`.
 {{ end }}
 
