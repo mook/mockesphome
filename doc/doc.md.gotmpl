@@ -20,21 +20,21 @@ The configuration format is similar to ESPHome configuration; the input YAML
 file can be configured to enable specific components as needed.  The currently
 supported components include:
 
-{{ range . -}}
+{{- range . }}
 
 ### {{ .Name }}
 
 {{ .Description }}
 
-{{- if .Config | len }}
+{{- if .Config | len -}}
 Parameter | Type | Description
 --- | --- | ---
 {{ range $key, $param := .Config -}}
 {{ $key }} | {{ $param.Type }} | {{ $param.Description }}
 {{ end }}
-{{ else }}
+{{- else -}}
 There is no configuration for `{{ .Name }}`.
-{{ end }}
+{{- end }}
 
 {{- end }}
 

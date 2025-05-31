@@ -4,4 +4,5 @@ package load
 import (
 	_ "github.com/mook/mockesphome/api"
 	_ "github.com/mook/mockesphome/bluetooth_proxy"
+	_ "github.com/mook/mockesphome/pprof"
 )
