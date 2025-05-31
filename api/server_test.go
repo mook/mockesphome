@@ -39,7 +39,7 @@ func TestConnectionReadMessage(t *testing.T) {
 		0x04,             // id 4 = ConnectResponse
 	}
 	it := &server{conn: bytes.NewBuffer(append(header, input...))}
-	actual, err := it.readMessage(t.Context())
+	actual, err := it.readMessage()
 	assert.NilError(t, err)
 	assert.Assert(t, proto.Equal(expected, actual))
 }

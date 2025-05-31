@@ -39,7 +39,7 @@ SOURCES += ${GENERATED}
 # Main executable
 $(notdir ${GO_MODULE}): ${SOURCES}
 	go build -o $@ \
-	-ldflags "-X ${GO_MODULE}/api.sourceURL=${SOURCE_URL}" \
+	-ldflags "-s -w -X ${GO_MODULE}/api.sourceURL=${SOURCE_URL}" \
 	.
 
 # Testing

@@ -8,8 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net"
 	"os"
+	"slices"
+	"sync"
 	"syscall"
 
 	"github.com/brutella/dnssd"
@@ -31,8 +34,11 @@ type Configuration struct {
 
 // ESPHome native API component
 type component struct {
-	config   Configuration
-	listener net.Listener
+	config     Configuration
+	listener   net.Listener
+	serverID   int
+	serverLock sync.Mutex
+	servers    map[int]*server
 }
 
 func (c *component) ID() string {
@@ -115,6 +121,24 @@ func (c *component) Start(ctx context.Context) error {
 	return nil
 }
 
+func (c *component) sendMessage(msg proto.Message) error {
+	c.serverLock.Lock()
+	servers := slices.Collect(maps.Values(c.servers))
+	c.serverLock.Unlock()
+
+	var errs []error
+
+	for _, server := range servers {
+		err := server.sendMessage(msg)
+		if err != nil {
+			slog.ErrorContext(server.ctx, "failed to send message", "error", err)
+			errs = append(errs, err)
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
 func runmDNS(ctx context.Context, port int) error {
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -148,6 +172,8 @@ func runmDNS(ctx context.Context, port int) error {
 }
 
 func init() {
-	instance := &component{}
+	instance := &component{
+		servers: make(map[int]*server),
+	}
 	components.Register(instance)
 }

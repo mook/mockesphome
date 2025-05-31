@@ -24,6 +24,7 @@ type Configuration struct{}
 type component struct {
 	config  Configuration
 	adapter *bluetooth.Adapter
+	send    api.MessageSender
 }
 
 type proxyFeatureFlag uint32
@@ -86,6 +87,11 @@ func (c *component) Start(ctx context.Context) error {
 		}
 		return nil
 	})
+	go func() {
+		if err := c.adapter.Scan(c.scanResultCallback); err != nil {
+			slog.ErrorContext(ctx, "failed to start scanning bluetooth", "error", err)
+		}
+	}()
 
 	return nil
 }
@@ -94,12 +100,7 @@ func (c *component) handleSubscribeBluetoothLEAdvertisements(ctx context.Context
 	if _, ok := msg.(*pb.SubscribeBluetoothLEAdvertisementsRequest); !ok {
 		return fmt.Errorf("message is not a SubscribeBluetoothLEAdvertisementsRequest")
 	}
-	go func() {
-		slog.DebugContext(ctx, "scanning bluetooth...")
-		if err := c.adapter.Scan(c.createScanResultCallback(ctx, send)); err != nil {
-			slog.ErrorContext(ctx, "error scanning", "error", err)
-		}
-	}()
+	c.send = send
 	return nil
 }
 
@@ -113,43 +114,44 @@ func bleAddressToUint64(addr bluetooth.MAC) uint64 {
 		uint64(addr[0])
 }
 
-func (c *component) createScanResultCallback(ctx context.Context, send api.MessageSender) func(*bluetooth.Adapter, bluetooth.ScanResult) {
-	return func(a *bluetooth.Adapter, result bluetooth.ScanResult) {
-		resp := &pb.BluetoothLEAdvertisementResponse{}
-		resp.SetAddress(bleAddressToUint64(result.Address.MAC))
-		resp.SetName(result.LocalName())
-		resp.SetRssi(int32(result.RSSI))
-		var serviceData []*pb.BluetoothServiceData
-		for _, sd := range result.ServiceData() {
-			data := &pb.BluetoothServiceData{}
-			data.SetUuid(sd.UUID.String())
-			data.SetData(sd.Data)
-			serviceData = append(serviceData, data)
-		}
-		resp.SetServiceData(serviceData)
-		var manufacturerData []*pb.BluetoothServiceData
-		for _, md := range result.ManufacturerData() {
-			data := &pb.BluetoothServiceData{}
-			data.SetUuid(fmt.Sprintf("0x%04X", md.CompanyID))
-			data.SetData(md.Data)
-			manufacturerData = append(manufacturerData, data)
-		}
-		resp.SetManufacturerData(manufacturerData)
+func (c *component) scanResultCallback(a *bluetooth.Adapter, result bluetooth.ScanResult) {
+	send := c.send
+	if send == nil {
+		return
+	}
+	resp := &pb.BluetoothLEAdvertisementResponse{}
+	resp.SetAddress(bleAddressToUint64(result.Address.MAC))
+	resp.SetName(result.LocalName())
+	resp.SetRssi(int32(result.RSSI))
+	var serviceData []*pb.BluetoothServiceData
+	for _, sd := range result.ServiceData() {
+		data := &pb.BluetoothServiceData{}
+		data.SetUuid(sd.UUID.String())
+		data.SetData(sd.Data)
+		serviceData = append(serviceData, data)
+	}
+	resp.SetServiceData(serviceData)
+	var manufacturerData []*pb.BluetoothServiceData
+	for _, md := range result.ManufacturerData() {
+		data := &pb.BluetoothServiceData{}
+		data.SetUuid(fmt.Sprintf("0x%04X", md.CompanyID))
+		data.SetData(md.Data)
+		manufacturerData = append(manufacturerData, data)
+	}
+	resp.SetManufacturerData(manufacturerData)
 
-		payloadValue := reflect.ValueOf(result.AdvertisementPayload).Elem()
-		fieldsValue := payloadValue.FieldByName("AdvertisementFields")
-		fields, ok := fieldsValue.Interface().(bluetooth.AdvertisementFields)
-		if ok {
-			var serviceUuids []string
-			for _, uuid := range fields.ServiceUUIDs {
-				serviceUuids = append(serviceUuids, uuid.String())
-			}
-			resp.SetServiceUuids(serviceUuids)
+	payloadValue := reflect.ValueOf(result.AdvertisementPayload).Elem()
+	fieldsValue := payloadValue.FieldByName("AdvertisementFields")
+	fields, ok := fieldsValue.Interface().(bluetooth.AdvertisementFields)
+	if ok {
+		var serviceUuids []string
+		for _, uuid := range fields.ServiceUUIDs {
+			serviceUuids = append(serviceUuids, uuid.String())
 		}
-
-		if err := send(resp); err != nil {
-			slog.ErrorContext(ctx, "failed to send bluetooth scan result", "error", err)
-		}
+		resp.SetServiceUuids(serviceUuids)
+	}
+	if err := send(resp); err != nil {
+		slog.Error("failed to send bluetooth scan result", "error", err)
 	}
 }
 

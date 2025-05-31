@@ -122,7 +122,7 @@ func parseComponent(ctx context.Context, pkg *packages.Package) (*component, err
 func genConfigDocs(object types.Object, pkg *packages.Package) (map[string]configItem, error) {
 	pos := object.Pos()
 	for _, file := range pkg.Syntax {
-		if !(file.FileStart <= pos && pos < file.FileEnd) {
+		if pos < file.FileStart || file.FileEnd <= pos {
 			continue // Not in this file
 		}
 		path, _ := astutil.PathEnclosingInterval(file, pos, pos)

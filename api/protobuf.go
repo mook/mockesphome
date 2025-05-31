@@ -1,13 +1,15 @@
 package api
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"sync"
+	"syscall"
 
+	"github.com/mook/mockesphome/utils"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -40,11 +42,11 @@ func getTypeID(mt protoreflect.MessageDescriptor) uint64 {
 }
 
 // Do a blocking read of a single varint from the conn, returning the value.
-func (c *server) readVarInt() (uint64, error) {
+func (s *server) readVarInt() (uint64, error) {
 	for {
-		v, n := protowire.ConsumeVarint(c.buffer)
+		v, n := protowire.ConsumeVarint(s.buffer)
 		if n >= 0 {
-			c.buffer = c.buffer[n:]
+			s.buffer = s.buffer[n:]
 			return v, nil
 		}
 		err := protowire.ParseError(n)
@@ -52,8 +54,8 @@ func (c *server) readVarInt() (uint64, error) {
 			return 0, err
 		}
 		buf := make([]byte, 10)
-		n, err = io.ReadAtLeast(c.conn, buf, 1)
-		c.buffer = append(c.buffer, buf[:n]...)
+		n, err = io.ReadAtLeast(s.conn, buf, 1)
+		s.buffer = append(s.buffer, buf[:n]...)
 		if err != nil {
 			if n <= 0 || !errors.Is(err, io.EOF) {
 				return 0, err
@@ -63,22 +65,22 @@ func (c *server) readVarInt() (uint64, error) {
 }
 
 // Do a blocking read of a message packet, returning the message.
-func (c *server) readMessage(ctx context.Context) (proto.Message, error) {
+func (s *server) readMessage() (proto.Message, error) {
 	if err := fillMessageMap(); err != nil {
 		return nil, err
 	}
-	header, err := c.readVarInt()
+	header, err := s.readVarInt()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read header byte: %w", err)
 	}
 	if header != 0 {
 		return nil, fmt.Errorf("read invalid header byte: %x", header)
 	}
-	messageSize, err := c.readVarInt()
+	messageSize, err := s.readVarInt()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read message size: %w", err)
 	}
-	messageTypeIndex, err := c.readVarInt()
+	messageTypeIndex, err := s.readVarInt()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read message type: %w", err)
 	}
@@ -87,24 +89,24 @@ func (c *server) readMessage(ctx context.Context) (proto.Message, error) {
 		return nil, fmt.Errorf("failed to map message type %d", messageTypeIndex)
 	}
 
-	for uint64(len(c.buffer)) < messageSize {
-		buf := make([]byte, messageSize-uint64(len(c.buffer)))
-		n, err := io.ReadFull(c.conn, buf)
-		c.buffer = append(c.buffer, buf[:n]...)
+	for uint64(len(s.buffer)) < messageSize {
+		buf := make([]byte, messageSize-uint64(len(s.buffer)))
+		n, err := io.ReadFull(s.conn, buf)
+		s.buffer = append(s.buffer, buf[:n]...)
 		if err != nil && !errors.Is(err, io.EOF) {
 			return nil, fmt.Errorf("failed to read message: %w", err)
 		}
 	}
 
 	message := messageType.New().Interface()
-	if err := proto.Unmarshal(c.buffer[:messageSize], message); err != nil {
+	if err := proto.Unmarshal(s.buffer[:messageSize], message); err != nil {
 		name := messageType.Descriptor().FullName()
-		slog.ErrorContext(ctx, "failed to unmarshal", "name", name, "buffer", fmt.Sprintf("%+v", c.buffer), "size", messageSize)
+		slog.ErrorContext(s.ctx, "failed to unmarshal", "name", name, "buffer", fmt.Sprintf("%+v", s.buffer), "size", messageSize)
 		return nil, fmt.Errorf("failed to unmarshal %s message: %w", name, err)
 	}
-	c.buffer = c.buffer[messageSize:]
+	s.buffer = s.buffer[messageSize:]
 
-	slog.DebugContext(ctx, "received incoming message", "message", message, "type", messageType.Descriptor().FullName())
+	slog.DebugContext(s.ctx, "received incoming message", "message", message, "type", messageType.Descriptor().FullName())
 	return message, nil
 }
 
@@ -121,6 +123,13 @@ func (s *server) sendMessage(msg proto.Message) error {
 	buf = protowire.AppendVarint(buf, typeID)
 	buf = append(buf, payload...)
 	if _, err := s.conn.Write(buf); err != nil {
+		if utils.AnyError(err, io.ErrClosedPipe, syscall.EPIPE, syscall.ECONNRESET, net.ErrClosed) {
+			// The underlying connection is dead; terminate the server.
+			s.cancel()
+			if s.state == connectionStateDisconnected {
+				return nil // If the connection is already disconnected, don't report.
+			}
+		}
 		return fmt.Errorf("failed to write outgoing message: %w", err)
 	}
 	return nil
